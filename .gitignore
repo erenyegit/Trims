@@ -1,0 +1,18 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Soroban build output
+*.wasm
+
+# Node
+node_modules/
+dist/
+.env
+.env.local
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
