@@ -14,9 +14,6 @@ use soroban_sdk::{
     vec, Address, Env, IntoVal, Symbol, Vec,
 };
 
-/// The router allowance is consumed within the same invocation.
-const ALLOWANCE_TTL: u32 = 1;
-
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -64,6 +61,10 @@ pub trait SoroswapRouter {
         to: Address,
         deadline: u64,
     ) -> Vec<i128>;
+
+    /// Address of the pool the router will route a two-token path through.
+    /// Needed to authorise the transfer the router makes on our behalf.
+    fn router_pair_for(e: Env, token_a: Address, token_b: Address) -> Address;
 }
 
 #[contract]
@@ -107,60 +108,46 @@ impl Receiver {
 
         let me = e.current_contract_address();
         let path = vec![&e, armed.collateral.clone(), armed.debt.clone()];
-        let expiry = e.ledger().sequence() + ALLOWANCE_TTL;
+        let router = RouterClient::new(&e, &armed.router);
 
-        // The router pulls the input by allowance and calls `to.require_auth()`.
-        // Both act on this contract's behalf, so authorise them explicitly
-        // instead of relying on invoker auth.
+        // Soroswap moves the input with `transfer(from = us)`, not
+        // `transfer_from`, so no allowance is granted — the router never gets
+        // standing permission over our balance. But that transfer is issued by
+        // the router rather than by us, so invoker auth does not cover it and
+        // we have to authorise it ourselves.
+        //
+        // The entry is top-level, not nested under the swap: the router's own
+        // `to.require_auth()` is already satisfied by invoker auth because we
+        // call it directly, so nothing is consumed at that level and an entry
+        // nested beneath it would never be reached.
+        //
+        // NOTE: this construction cannot be validated by any mocked test.
+        // `mock_all_auths` rejects non-root invoker auth outright, and
+        // `mock_all_auths_allowing_non_root_auth` accepts it without checking
+        // the entries -- we confirmed a deliberately wrong entry still passes.
+        // Only enforcing-mode execution on a network actually verifies this.
+        let pair = router.router_pair_for(&armed.collateral, &armed.debt);
         e.authorize_as_current_contract(vec![
             &e,
             InvokerContractAuthEntry::Contract(SubContractInvocation {
                 context: ContractContext {
                     contract: armed.collateral.clone(),
-                    fn_name: Symbol::new(&e, "approve"),
-                    args: (me.clone(), armed.router.clone(), amount, expiry).into_val(&e),
-                },
-                sub_invocations: vec![&e],
-            }),
-            InvokerContractAuthEntry::Contract(SubContractInvocation {
-                context: ContractContext {
-                    contract: armed.router.clone(),
-                    fn_name: Symbol::new(&e, "swap_exact_tokens_for_tokens"),
-                    args: (
-                        amount,
-                        armed.min_out,
-                        path.clone(),
-                        me.clone(),
-                        armed.deadline,
-                    )
-                        .into_val(&e),
+                    fn_name: Symbol::new(&e, "transfer"),
+                    args: (me.clone(), pair, amount).into_val(&e),
                 },
                 sub_invocations: vec![&e],
             }),
         ]);
 
-        token::TokenClient::new(&e, &armed.collateral).approve(
-            &me,
-            &armed.router,
-            &amount,
-            &expiry,
-        );
-
         // Measure what actually arrived rather than trusting the router's
-        // return value. The router is caller-supplied and has just been given
-        // an allowance over the collateral, so its self-report is the one thing
-        // that must not be taken on faith: a hostile or non-conforming router
-        // could report a healthy figure and deliver less, or nothing.
+        // return value. The router is caller-supplied and has just been handed
+        // the collateral, so its self-report is the one thing that must not be
+        // taken on faith: a hostile or non-conforming router could report a
+        // healthy figure and deliver less, or nothing.
         let debt_token = token::TokenClient::new(&e, &armed.debt);
         let before = debt_token.balance(&me);
 
-        RouterClient::new(&e, &armed.router).swap_exact_tokens_for_tokens(
-            &amount,
-            &armed.min_out,
-            &path,
-            &me,
-            &armed.deadline,
-        );
+        router.swap_exact_tokens_for_tokens(&amount, &armed.min_out, &path, &me, &armed.deadline);
 
         let received = debt_token.balance(&me) - before;
         if received < armed.min_out {

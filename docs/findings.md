@@ -196,3 +196,52 @@ user -> Manager.deleverage
 ```
 
 It is also why Blend ships its reference receiver as a standalone contract.
+
+---
+
+## 9. Plain `cargo build` produces wasm the Soroban host rejects
+
+Both Trims contracts compiled cleanly, passed every test, and were rejected on
+upload:
+
+```
+Error(WasmVm, InvalidAction)
+Module(Translation(Validate(BinaryReaderError {
+  message: "reference-types not enabled: zero byte expected", offset: 7258 })))
+```
+
+Reading the bytes at that offset explains it:
+
+```
+11              call_indirect
+80 80 80 80 00  type index — zero, but padded to a five-byte LEB
+80 80 80 80 00  table index — likewise
+```
+
+MVP wasm requires a single literal `0x00` after the type index. LLVM emitted a
+padded LEB, which is only legal under the reference-types proposal.
+
+Two things that did **not** fix it, both worth recording because they look like
+they should:
+
+- `-C target-feature=-reference-types,-multivalue`, whether set through
+  `.cargo/config.toml` or `RUSTFLAGS`. The flag verifiably reaches rustc
+  (confirmed with `cargo build -v`) and the output is byte-identical without it.
+- Pinning `soroban-sdk` down to 22.0.7, the version Blend builds against.
+
+The encoding is emitted by LLVM regardless of the feature flag, so it has to be
+rewritten after the fact. `stellar contract optimize` does exactly that:
+
+```
+trims_manager.wasm   11,827 -> 9,166 bytes,  padded LEB gone
+trims_receiver.wasm  14,154 -> 10,532 bytes, padded LEB gone
+```
+
+Note that `stellar contract build` is *not* a substitute here — CLI 28 targets
+`wasm32v1-none`, which soroban-sdk 22 does not support. The build stays on
+`cargo`, and `optimize` runs after it. `validation/run.sh` enforces this and
+fails with an explanation if the CLI is missing.
+
+The practical consequence: a contract can be fully green locally — compiling,
+testing, formatting — and still be undeployable. Nothing in the Rust toolchain
+surfaces this; only an upload attempt does.

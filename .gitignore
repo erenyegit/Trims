@@ -23,3 +23,6 @@ validation/vendor/
 
 # Regenerated on every test run; Blend and the Soroban templates ignore these too.
 test_snapshots/
+
+# Staged into the Blend workspace by validation/run.sh.
+trims-artifacts/

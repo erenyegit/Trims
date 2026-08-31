@@ -12,10 +12,12 @@ circularity Trims removes.
 
 ## Status
 
-**Working prototype.** The execution path is validated against Blend V2's own
-contracts, and the manager and receiver contracts are written, tested, and building
-to wasm. What remains before this is usable is integration, not discovery: the real
-Soroswap router, and a mainnet round trip with a real wallet signature.
+**Integration-proven prototype.** The compiled Trims contracts clear a real Blend
+position by routing through Soroswap's deployed bytecode, starting from a wallet
+holding nothing. Every counterparty in that test is the real thing.
+
+What remains is a network round trip: authorisation is the one property no local
+test can verify (see below), and only testnet then mainnet settle it.
 
 See [`docs/findings.md`](docs/findings.md) for the analysis behind the design and
 [`validation/`](validation/) to reproduce the Blend tests.
@@ -57,8 +59,9 @@ net_balances[token] = pool_transfer − spender_transfer
 net == 0  →  no transfer occurs at all
 ```
 
-the withdrawn collateral and the flash repayment cancel out. **The collateral never
-touches the user's wallet.**
+the withdrawn collateral and the flash repayment cancel out, so **the user never has
+to hold the collateral to spend it.** (A dust remainder from Blend's repayment
+refund does land in the wallet — a rounding artifact, not a funding requirement.)
 
 ### Test results
 
@@ -67,16 +70,19 @@ Both tests pass against unmodified Blend V2 contracts:
 | Test | What it proves |
 |---|---|
 | `trims_deleverage_core.rs` | The recipe executes; debt is cleared; collateral is reduced |
-| `trims_deleverage_real_amm.rs` | Same, but the user's wallet is **emptied of both assets first**, and settlement runs through a **live constant-product AMM** with a 0.3% fee and real slippage |
+| `trims_deleverage_real_amm.rs` | Same, but the wallet is **emptied of both assets first** and settlement runs through a live constant-product AMM with a 0.3% fee |
+| `trims_integration_soroswap.rs` | **The full system.** Compiled Trims manager and receiver, driving a real Blend pool, settling through Soroswap's deployed factory/router/pair bytecode, from an empty wallet |
 
 ```
-wallet emptied      ->  0 XLM, 0 STABLE
-before              ->  collateral 99,998 XLM | debt 999.99 STABLE
-after               ->  collateral 88,998 XLM | debt <empty>
-wallet after        ->  0.001 XLM, 95.49 STABLE
+soroswap pair  ->  CA7YQMKDYTPLYWCUJAT4FARMZNT2BBU2GLH422G6PZ2E73FCZMP7BYUT
+wallet emptied ->  0 XLM, 0 STABLE
+before         ->  collateral 99,998 XLM | debt 999.99 STABLE
+after          ->  collateral 88,998 XLM | debt <empty>
+wallet after   ->  0.001 XLM, 94.30 STABLE
 ```
 
-The debt is cleared without the user supplying any capital.
+The debt is cleared without the user supplying any capital, and Trims retains
+nothing of either asset.
 
 ---
 
@@ -108,7 +114,16 @@ Invariants enforced in code and covered by tests:
 
 ```bash
 cd contracts && cargo test          # 17 tests
+./validation/run.sh                 # 3 tests against real Blend + Soroswap
 ```
+
+### Building
+
+The `stellar` CLI is required. Plain `cargo build` emits `call_indirect`
+immediates as padded LEBs, which the Soroban host rejects on upload — the
+contracts compile, test, and lint clean while being undeployable.
+`stellar contract optimize` rewrites them; `validation/run.sh` runs it. See
+[finding 9](docs/findings.md).
 
 ## Roadmap
 
@@ -121,13 +136,13 @@ cd contracts && cargo test          # 17 tests
 
 ## What is not yet proven
 
-- **Soroswap router integration.** The receiver's swap leg is written against the
-  router's interface and exercised against stubs; the Blend validation used a Comet
-  AMM. Run [`validation/fetch-soroswap.sh`](validation/fetch-soroswap.sh) to pull the
-  real binaries — the end-to-end test against them is the next milestone.
-- **Production authorization.** `authorize_as_current_contract` is written for both
-  sub-invocations, but has only been exercised against stub counterparties.
-- **Mainnet execution** with a real wallet signature.
+- **Authorisation.** This is the one thing no local test reaches. The receiver
+  authorises the transfer Soroswap makes on its behalf via
+  `authorize_as_current_contract`; `mock_all_auths` refuses non-root invoker auth
+  outright, and `mock_all_auths_allowing_non_root_auth` accepts it *without
+  checking the entries* — we confirmed a deliberately wrong entry passes just as
+  happily. Only enforcing-mode execution on a network verifies it.
+- **Network execution** on testnet, then mainnet, with a real wallet signature.
 - **Liquidity depth** for large positions.
 - **Edge cases:** stale oracle, `max_positions` at the cap, token decimals.
 

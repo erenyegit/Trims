@@ -60,6 +60,12 @@ impl StubRouter {
         e.storage().instance().set(&symbol_short!("den"), &den);
     }
 
+    /// Soroswap exposes this so callers can authorise the transfer it makes
+    /// on their behalf. Any address works here; only the auth tree cares.
+    pub fn router_pair_for(e: Env, _a: Address, _b: Address) -> Address {
+        e.current_contract_address()
+    }
+
     pub fn swap_exact_tokens_for_tokens(
         e: Env,
         amount_in: i128,
@@ -73,7 +79,7 @@ impl StubRouter {
         let out = amount_in * num / den;
         assert!(out >= amount_out_min, "router: below floor");
         let me = e.current_contract_address();
-        TokenClient::new(&e, &path.first().unwrap()).transfer_from(&me, &to, &me, &amount_in);
+        TokenClient::new(&e, &path.first().unwrap()).transfer(&to, &me, &amount_in);
         TokenClient::new(&e, &path.last().unwrap()).transfer(&me, &to, &out);
         vec![&e, amount_in, out]
     }
@@ -92,7 +98,7 @@ struct Fx {
 
 fn setup() -> Fx {
     let e = Env::default();
-    e.mock_all_auths();
+    e.mock_all_auths_allowing_non_root_auth();
 
     let admin = Address::generate(&e);
     let collateral = e

@@ -12,7 +12,9 @@
 set -euo pipefail
 
 DEST="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/vendor}"
-BASE="https://raw.githubusercontent.com/soroswap/core/main/public/mainnet-deployment-2024-03"
+# Pinned to soroswap/core@bb90a65 (2025-12-22) rather than a branch: a moving
+# ref would turn an upstream change into a checksum failure instead of a fetch.
+BASE="https://raw.githubusercontent.com/soroswap/core/bb90a65556d8eee0dc698ac75de0f280e547fedc/public/mainnet-deployment-2024-03"
 
 # file                            expected sha256
 FILES=(

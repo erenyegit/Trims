@@ -1,0 +1,10 @@
+# Rust enables the wasm `reference-types` and `multivalue` proposals by default
+# for wasm32-unknown-unknown, but the Soroban host rejects modules that use
+# them: uploading one fails with
+#   Module(Translation(Validate(... "reference-types not enabled" ...)))
+#
+# `stellar contract build` sets these flags for you. We build with plain cargo,
+# so we set them here — without this the contracts compile fine and are
+# undeployable.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=-reference-types,-multivalue"]

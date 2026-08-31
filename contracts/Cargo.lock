@@ -1410,9 +1410,9 @@ dependencies = [
 
 [[package]]
 name = "soroban-sdk"
-version = "22.0.11"
+version = "22.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff18e8d7ca6d5340a211605ca2c86383bd4dfacc4f8253d72a1573974ffffe69"
+checksum = "c85edd55eb09aa5dd7ba5ab595d2be7ac3f453e90e2f26d704ff26c130f2926f"
 dependencies = [
  "arbitrary",
  "bytes-lit",

@@ -34,12 +34,39 @@ cp target/wasm32-unknown-unknown/release/pool_factory.wasm \
    target/wasm32-unknown-unknown/release/pool.wasm \
    target/wasm32-unknown-unknown/optimized/
 
+echo "==> staging Trims and Soroswap artifacts"
+# The integration test runs inside Blend's workspace, so everything it loads has
+# to sit at a path `contractimport!` can resolve from the test-suites crate root.
+ART="$REPO/trims-artifacts"
+mkdir -p "$ART"
+
+if ! command -v stellar >/dev/null; then
+  echo "error: the stellar CLI is required." >&2
+  echo "  Plain 'cargo build' emits call_indirect immediates as padded LEBs," >&2
+  echo "  which the Soroban host rejects on upload. 'stellar contract optimize'" >&2
+  echo "  rewrites them. See docs/findings.md, finding 9." >&2
+  echo "  Install: brew install stellar-cli" >&2
+  exit 1
+fi
+
+TRIMS="$HERE/../contracts"
+(cd "$TRIMS" && cargo build --release --target wasm32-unknown-unknown)
+for c in trims_manager trims_receiver; do
+  stellar contract optimize \
+    --wasm     "$TRIMS/target/wasm32-unknown-unknown/release/$c.wasm" \
+    --wasm-out "$ART/$c.wasm"
+done
+
+"$HERE/fetch-soroswap.sh" >/dev/null
+cp "$HERE"/vendor/soroswap_*.optimized.wasm "$ART/"
+
 echo "==> installing Trims validation tests"
 cp "$HERE"/tests/*.rs test-suites/tests/
 
 echo "==> running"
-cargo test -p test-suites --test trims_deleverage_core     -- --nocapture
-cargo test -p test-suites --test trims_deleverage_real_amm -- --nocapture
+cargo test -p test-suites --test trims_deleverage_core        -- --nocapture
+cargo test -p test-suites --test trims_deleverage_real_amm    -- --nocapture
+cargo test -p test-suites --test trims_integration_soroswap   -- --nocapture
 
 echo
-echo "==> both validation tests passed"
+echo "==> all validation tests passed"
