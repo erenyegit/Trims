@@ -137,3 +137,37 @@ the population Trims serves.
 
 `YieldBlox V2` reserve list: XLM, USDC, EURC, AQUA, USDGLO, USTRY, CETES, PYUSD.
 Collateral factors for USTRY and CETES are both `0`, disabling them as collateral.
+
+
+---
+
+## 7. Two protocol-level blockers
+
+### Active liquidation auction
+
+`validate_submit` (used by both `submit` and `flash_loan`):
+
+```rust
+if storage::has_auction(e, &(AuctionType::UserLiquidation as u32), &from_state.address) {
+    panic_with_error!(e, PoolError::AuctionInProgress);
+}
+```
+
+A user with an open liquidation auction cannot transact at all. Trims is preventive,
+not a rescue tool — this belongs in the product copy, not just the code.
+
+### Pool status gating
+
+```rust
+// action_type 4 == Borrow
+if (self.config.status > 1 && (action_type == 4 || action_type == 9)) || ... {
+    panic_with_error!(e, PoolError::InvalidPoolStatus);
+}
+```
+
+`execute_submit_with_flash_loan` calls `require_action_allowed(Borrow)`, so any pool
+status above 1 (on-ice, frozen) disables flash loans entirely. Measured on mainnet:
+`Fixed V2` is status 1, `YieldBlox V2` is status 0 — both currently permit it.
+
+The implication is uncomfortable and worth stating plainly: if a pool goes on-ice
+during a market dislocation, Trims goes offline at the moment its users need it most.

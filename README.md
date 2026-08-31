@@ -94,9 +94,24 @@ The debt is cleared without the user supplying any capital.
 - Liquidity depth for large positions
 - Edge cases: stale oracle, active liquidation auction, `max_positions`, token decimals
 
-## Licensing note
+## Hard limits (verified in Blend V2 source)
+
+Two conditions make a position unreachable by Trims. Both are protocol-level and
+cannot be worked around:
+
+- **An active liquidation auction blocks everything.** `validate_submit` panics with
+  `AuctionInProgress` if the user has an open `UserLiquidation` auction. Trims is a
+  *preventive* tool — once liquidation has started, it cannot help.
+- **A non-active pool blocks flash loans.** `require_action_allowed` rejects
+  borrowing whenever pool status > 1 (on-ice or frozen), and the flash loan is a
+  borrow. Trims stops working exactly when a pool is stressed, which may be when
+  users most want it. Both live V2 pools are currently status 0 and 1.
+
+## Licensing
+
+Trims is Apache-2.0 (see [`LICENSE`](LICENSE)).
 
 Blend V2 is AGPL-3.0. The validation tests under [`validation/`](validation/) run
-inside Blend's own workspace and are derivative of it. The Trims receiver contract
-makes cross-contract calls only and is not a derivative work. License selection for
-the contract is still open.
+inside Blend's own workspace and are derivative of it; they are research artifacts,
+not shipped code. The Trims receiver contract makes cross-contract calls only and is
+not a derivative work.
