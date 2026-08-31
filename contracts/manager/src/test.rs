@@ -227,6 +227,17 @@ fn rejects_same_asset_on_both_legs() {
 }
 
 #[test]
+fn refuses_when_proceeds_would_not_cover_the_repayment() {
+    let fx = setup();
+    // Guaranteeing 899 while repaying 900 would leave a 1-unit shortfall for
+    // Blend to pull from the user's own wallet.
+    assert_eq!(
+        fx.try_call(&fx.debt, 100_000, 100_000, 900, 899),
+        Some(ManagerError::ProceedsBelowRepayment.into())
+    );
+}
+
+#[test]
 fn slippage_floor_blocks_a_bad_swap() {
     // Router yields 1_000; demand 1_001.
     let fx = setup();

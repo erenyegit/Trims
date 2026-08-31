@@ -146,7 +146,15 @@ impl Receiver {
             &expiry,
         );
 
-        let amounts = RouterClient::new(&e, &armed.router).swap_exact_tokens_for_tokens(
+        // Measure what actually arrived rather than trusting the router's
+        // return value. The router is caller-supplied and has just been given
+        // an allowance over the collateral, so its self-report is the one thing
+        // that must not be taken on faith: a hostile or non-conforming router
+        // could report a healthy figure and deliver less, or nothing.
+        let debt_token = token::TokenClient::new(&e, &armed.debt);
+        let before = debt_token.balance(&me);
+
+        RouterClient::new(&e, &armed.router).swap_exact_tokens_for_tokens(
             &amount,
             &armed.min_out,
             &path,
@@ -154,9 +162,8 @@ impl Receiver {
             &armed.deadline,
         );
 
-        // The router enforces its own floor; re-check so a non-conforming
-        // router cannot quietly under-deliver.
-        if amounts.last().unwrap_or(0) < armed.min_out {
+        let received = debt_token.balance(&me) - before;
+        if received < armed.min_out {
             panic_with_error!(&e, ReceiverError::SlippageExceeded);
         }
 

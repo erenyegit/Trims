@@ -12,9 +12,13 @@ circularity Trims removes.
 
 ## Status
 
-**Pre-implementation. The core execution path has been validated against Blend V2's
-own contracts.** See [`docs/findings.md`](docs/findings.md) for the full analysis and
-[`validation/`](validation/) to reproduce the tests.
+**Working prototype.** The execution path is validated against Blend V2's own
+contracts, and the manager and receiver contracts are written, tested, and building
+to wasm. What remains before this is usable is integration, not discovery: the real
+Soroswap router, and a mainnet round trip with a real wallet signature.
+
+See [`docs/findings.md`](docs/findings.md) for the analysis behind the design and
+[`validation/`](validation/) to reproduce the Blend tests.
 
 ---
 
@@ -89,8 +93,12 @@ calls `flash_loan` cannot also be the receiver Blend calls back into. See
 
 Invariants enforced in code and covered by tests:
 
-- **No unbounded swaps.** `min_out` must be positive; the receiver re-checks the
-  router's output against it.
+- **No unbounded swaps.** `min_out` must be positive, and the receiver verifies it
+  against the *measured* change in its own balance — never the router's self-report.
+  A hostile router that claims a good fill and delivers a stroop is rejected.
+- **The user never funds the repayment.** `min_out >= repay_amount` is enforced up
+  front. Without it a thin swap leaves a shortfall that Blend pulls straight from
+  the user's wallet, which is the one thing Trims exists to prevent.
 - **The receiver is one-shot.** An arming is consumed on use and is bound to a
   single user, so the callback cannot be replayed or hijacked.
 - **Nothing is retained.** Every call sweeps both assets to the user, including
@@ -99,7 +107,7 @@ Invariants enforced in code and covered by tests:
   withdrawal and the flash repayment would not cancel.
 
 ```bash
-cd contracts && cargo test          # 14 tests
+cd contracts && cargo test          # 17 tests
 ```
 
 ## Roadmap
@@ -111,14 +119,17 @@ cd contracts && cargo test          # 14 tests
 | **3** | Keeper automation — auto-deleverage on health-factor breach |
 | **4** | Full platform, audit, production launch |
 
-## Known open questions
+## What is not yet proven
 
-- Soroswap router integration (validation used a Comet AMM, not Soroswap itself)
-- Production authorization: the receiver must authorize its own sub-invocations via
-  `authorize_as_current_contract` — surfaced by the validation tests
-- Mainnet execution with a real wallet signature
-- Liquidity depth for large positions
-- Edge cases: stale oracle, active liquidation auction, `max_positions`, token decimals
+- **Soroswap router integration.** The receiver's swap leg is written against the
+  router's interface and exercised against stubs; the Blend validation used a Comet
+  AMM. Run [`validation/fetch-soroswap.sh`](validation/fetch-soroswap.sh) to pull the
+  real binaries — the end-to-end test against them is the next milestone.
+- **Production authorization.** `authorize_as_current_contract` is written for both
+  sub-invocations, but has only been exercised against stub counterparties.
+- **Mainnet execution** with a real wallet signature.
+- **Liquidity depth** for large positions.
+- **Edge cases:** stale oracle, `max_positions` at the cap, token decimals.
 
 ## Hard limits (verified in Blend V2 source)
 

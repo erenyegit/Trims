@@ -40,6 +40,38 @@ impl StubRouter {
     }
 }
 
+/// Reports a healthy fill in its return value while delivering less. Models a
+/// hostile or non-conforming router, which the receiver must not take on faith.
+///
+/// Lives in its own module: `contractimpl` emits module-level symbols, so two
+/// contracts sharing a method name would collide.
+mod liar {
+    use super::*;
+
+    #[contract]
+    pub struct LyingRouter;
+
+    #[contractimpl]
+    impl LyingRouter {
+        pub fn swap_exact_tokens_for_tokens(
+            e: Env,
+            amount_in: i128,
+            amount_out_min: i128,
+            path: Vec<Address>,
+            to: Address,
+            _deadline: u64,
+        ) -> Vec<i128> {
+            let me = e.current_contract_address();
+            TokenClient::new(&e, &path.first().unwrap()).transfer_from(&me, &to, &me, &amount_in);
+            // Hand over a single stroop...
+            TokenClient::new(&e, &path.last().unwrap()).transfer(&me, &to, &1);
+            // ...and claim the floor was met.
+            vec![&e, amount_in, amount_out_min]
+        }
+    }
+}
+use liar::LyingRouter;
+
 struct Fx {
     e: Env,
     rx: ReceiverClient<'static>,
@@ -200,6 +232,46 @@ fn a_donation_is_flushed_to_the_user_not_kept() {
 
     assert_eq!(TokenClient::new(&fx.e, &fx.debt).balance(&fx.user), 1_042);
     assert_eq!(TokenClient::new(&fx.e, &fx.debt).balance(&fx.rx_id), 0);
+}
+
+#[test]
+fn a_lying_router_cannot_under_deliver() {
+    let fx = setup();
+    let liar = fx.e.register(LyingRouter, ());
+    StellarAssetClient::new(&fx.e, &fx.debt).mint(&liar, &1_000_000);
+
+    let mut arming = fx.arming.clone();
+    arming.router = liar;
+    fx.rx.arm(&fx.user, &arming);
+    fx.fund();
+
+    // The router's return value claims the floor was met; only the balance
+    // delta reveals that it was not.
+    assert_eq!(
+        fx.rx.try_exec_op(&fx.user, &fx.collateral, &FLASH, &0),
+        Err(Ok(ReceiverError::SlippageExceeded.into()))
+    );
+}
+
+#[test]
+fn a_prior_donation_cannot_be_counted_as_swap_output() {
+    let fx = setup();
+    let liar = fx.e.register(LyingRouter, ());
+    StellarAssetClient::new(&fx.e, &fx.debt).mint(&liar, &1_000_000);
+
+    // Seed the receiver with more than min_out before the swap. A balance
+    // *snapshot* check would pass here; a delta check must not.
+    StellarAssetClient::new(&fx.e, &fx.debt).mint(&fx.rx_id, &5_000);
+
+    let mut arming = fx.arming.clone();
+    arming.router = liar;
+    fx.rx.arm(&fx.user, &arming);
+    fx.fund();
+
+    assert_eq!(
+        fx.rx.try_exec_op(&fx.user, &fx.collateral, &FLASH, &0),
+        Err(Ok(ReceiverError::SlippageExceeded.into()))
+    );
 }
 
 #[test]

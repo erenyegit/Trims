@@ -39,6 +39,9 @@ pub enum ManagerError {
     UnwindBelowFlash = 5,
     /// Collateral and debt must be different assets.
     SameAsset = 6,
+    /// The guaranteed swap output would not cover the repayment, so the
+    /// shortfall would be drawn from the user's own wallet.
+    ProceedsBelowRepayment = 7,
 }
 
 // -- Blend interface. Mirrors `blend-contracts-v2` exactly; Soroban encodes
@@ -163,6 +166,13 @@ impl Manager {
         }
         if collateral == debt {
             panic_with_error!(&e, ManagerError::SameAsset);
+        }
+        // Blend settles the repayment by pulling the debt asset from the user.
+        // If the swap's guaranteed floor is below what is being repaid, the
+        // shortfall comes out of the user's own wallet -- which is precisely
+        // what Trims exists to avoid. Refuse the whole operation instead.
+        if min_out < repay_amount {
+            panic_with_error!(&e, ManagerError::ProceedsBelowRepayment);
         }
 
         let receiver = Self::receiver(e.clone());
