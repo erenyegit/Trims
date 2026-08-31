@@ -76,11 +76,37 @@ The debt is cleared without the user supplying any capital.
 
 ---
 
+## Contracts
+
+| Crate | Role |
+|---|---|
+| [`contracts/manager`](contracts/manager) | User entry point. Validates the request, arms the receiver, initiates the flash loan. |
+| [`contracts/receiver`](contracts/receiver) | Blend's flash-loan callback. Swaps the collateral, sweeps everything to the user, keeps nothing. |
+
+They are separate because **Soroban forbids contract re-entry**: a contract that
+calls `flash_loan` cannot also be the receiver Blend calls back into. See
+[finding 8](docs/findings.md).
+
+Invariants enforced in code and covered by tests:
+
+- **No unbounded swaps.** `min_out` must be positive; the receiver re-checks the
+  router's output against it.
+- **The receiver is one-shot.** An arming is consumed on use and is bound to a
+  single user, so the callback cannot be replayed or hijacked.
+- **Nothing is retained.** Every call sweeps both assets to the user, including
+  any stray donation, and asserts the contract ends empty.
+- **The collateral legs must net.** `unwind_amount >= flash_amount`, or the
+  withdrawal and the flash repayment would not cancel.
+
+```bash
+cd contracts && cargo test          # 14 tests
+```
+
 ## Roadmap
 
 | Stage | Scope |
 |---|---|
-| **1 — One-click deleverage** | Stateless receiver contract, validated request recipe, Soroswap settlement, health-factor preview, mainnet transaction |
+| **1 — One-click deleverage** | Stateless receiver contract *(built)*, validated request recipe *(built)*, Soroswap router integration, health-factor preview, mainnet transaction |
 | **2** | Collateral swap · debt swap |
 | **3** | Keeper automation — auto-deleverage on health-factor breach |
 | **4** | Full platform, audit, production launch |

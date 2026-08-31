@@ -171,3 +171,28 @@ status above 1 (on-ice, frozen) disables flash loans entirely. Measured on mainn
 
 The implication is uncomfortable and worth stating plainly: if a pool goes on-ice
 during a market dislocation, Trims goes offline at the moment its users need it most.
+
+
+---
+
+## 8. Soroban forbids contract re-entry — the receiver must be a separate contract
+
+A single contract that both initiates the flash loan and receives the callback
+traps:
+
+```
+user -> Trims.deleverage -> Pool.flash_loan -> Trims.exec_op
+                                               ^ Trims is already on the stack
+Error(Context, InvalidAction): "Contract re-entry is not allowed"
+```
+
+This is a host-level rule, not a test artifact, and it dictates the architecture:
+
+```
+user -> Manager.deleverage
+          |-- Receiver.arm(...)          arms one callback, then returns
+          `-- Pool.flash_loan(...)
+                `-- Receiver.exec_op()   Receiver is not on the stack -> allowed
+```
+
+It is also why Blend ships its reference receiver as a standalone contract.

@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["manager", "receiver"]
+
+[workspace.dependencies.soroban-sdk]
+version = "22.0.7"
+
+[workspace.dependencies.blend-contract-sdk]
+version = "1.22.0"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true   # do not remove: prevents silent wraparound on amounts
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
