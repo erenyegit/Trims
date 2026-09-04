@@ -12,12 +12,21 @@ circularity Trims removes.
 
 ## Status
 
-**Integration-proven prototype.** The compiled Trims contracts clear a real Blend
-position by routing through Soroswap's deployed bytecode, starting from a wallet
-holding nothing. Every counterparty in that test is the real thing.
+**Deployed on testnet.** The compiled Trims contracts clear a real Blend position
+by routing through Soroswap's deployed bytecode, starting from a wallet holding
+nothing — and both contracts are now live on Stellar testnet:
 
-What remains is a network round trip: authorisation is the one property no local
-test can verify (see below), and only testnet then mainnet settle it.
+| Contract | ID |
+|---|---|
+| Manager | [`CA3SMX3N…LDUB`](https://stellar.expert/explorer/testnet/contract/CA3SMX3NJEJG5YWGB7VJZOBG4SQTBU6WPH7PQC7BU4JN2LQKPR66LDUB) |
+| Receiver | [`CAHEXZDM…N2ZG`](https://stellar.expert/explorer/testnet/contract/CAHEXZDMXDOWKD7UOBLMUJVN3DM65H75RD6NS5TUUMJYRJYM6JV5N2ZG) |
+
+See [`docs/deployments.md`](docs/deployments.md). The deployment also confirmed,
+against a real network rather than a mocked auth mode, that only the manager can
+arm the receiver.
+
+What remains is the deleverage itself on a network: the authorisation covering
+Soroswap's transfer is the one property no local test can verify (see below).
 
 See [`docs/findings.md`](docs/findings.md) for the analysis behind the design and
 [`validation/`](validation/) to reproduce the Blend tests.
